@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 const LOCK_TIMEOUT_MS = 3 * 60 * 1000;
-const HEARTBEAT_INTERVAL_MS = 30 * 1000;
+
 
 const EMPTY_LOCK = {
   id: 1,
@@ -263,37 +263,53 @@ return true;
     };
   }, [loadLock]);
 
-  useEffect(() => {
-    if (!editing || lock.locked_by !== editorId.current) {
-      return undefined;
+useEffect(() => {
+  if (!editing) {
+    return undefined;
+  }
+
+  if (lock.locked_by !== editorId.current) {
+    return undefined;
+  }
+
+  const elapsed = lock.locked_at
+    ? Date.now() - new Date(lock.locked_at).getTime()
+    : 0;
+
+  const remainingTime = Math.max(
+    0,
+    LOCK_TIMEOUT_MS - elapsed
+  );
+
+  const timeoutId = window.setTimeout(async () => {
+    const { error } = await supabase
+      .from("edit_lock")
+      .update({
+        is_locked: false,
+        locked_by: null,
+        locked_at: null,
+      })
+      .eq("id", 1)
+      .eq("locked_by", editorId.current);
+
+    if (error) {
+      setLockMessage(
+        `Auto unlock failed: ${error.message}`
+      );
+      return;
     }
 
-    const heartbeatId = window.setInterval(async () => {
-      const { data, error } = await supabase
-        .from("edit_lock")
-        .update({
-          locked_at: new Date().toISOString(),
-        })
-        .eq("id", 1)
-        .eq("is_locked", true)
-        .eq("locked_by", editorId.current)
-        .select("id,is_locked,locked_by,locked_at")
-        .maybeSingle();
+    setLock(EMPTY_LOCK);
+    setEditing(false);
+    setLockMessage(
+      "Edit session expired after 3 minutes."
+    );
+  }, remainingTime);
 
-      if (error) {
-        console.error("Edit lock heartbeat failed:", error.message);
-        return;
-      }
-
-      if (data) {
-        setLock(data);
-      }
-    }, HEARTBEAT_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(heartbeatId);
-    };
-  }, [editing, lock.locked_by]);
+  return () => {
+    window.clearTimeout(timeoutId);
+  };
+}, [editing, lock.locked_by, lock.locked_at]);
   useEffect(() => {
   const timeoutChecker = window.setInterval(async () => {
     const { data, error } = await supabase
