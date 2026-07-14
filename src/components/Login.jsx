@@ -17,7 +17,7 @@ export default function Login({ onLogin }) {
       username.trim() === USERNAME &&
       password === PASSWORD
     ) {
-      sessionStorage.setItem("cashbook_login", "true");
+      localStorage.setItem("cashbook_login", "true");
       onLogin();
       return;
     }
