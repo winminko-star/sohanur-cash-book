@@ -221,9 +221,10 @@ export default function useEditLock() {
     }
 
     setLock(EMPTY_LOCK);
-    setEditing(false);
+setEditing(false);
+setLockMessage("");
 
-    return true;
+return true;
   }, []);
 
   useEffect(() => {
