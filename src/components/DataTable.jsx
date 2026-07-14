@@ -1,567 +1,61 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "../lib/supabase";
-
-const LOCK_TIMEOUT = 3 * 60 * 1000;
-const HEARTBEAT = 30000;
-
-function num(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function money(v) {
-  return num(v).toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
-}
-
-function balance(r) {
-  return (
-    num(r.blash1) +
-    num(r.blash2) +
-    num(r.return_ac) -
-    num(r.deposit)
-  );
-}
-
-function editorId() {
-  let id = sessionStorage.getItem("editor_id");
-
-  if (!id) {
-    id =
-      typeof crypto !== "undefined" &&
-      crypto.randomUUID
-        ? crypto.randomUUID()
-        : Date.now().toString();
-
-    sessionStorage.setItem("editor_id", id);
-  }
-
-  return id;
-}
+import useCashBook from "../hooks/useCashBook";
+import useEditLock from "../hooks/useEditLock";
 
 export default function DataTable() {
 
-  const myId = useRef(editorId());
+  const {
 
-  const [rows, setRows] = useState([]);
+    editing,
 
-  const [editing, setEditing] =
-    useState(false);
+    lockedByOther,
 
-  const [saving, setSaving] =
-    useState(false);
+    lockMessage,
 
-  const [loading, setLoading] =
-    useState(true);
+    startEditing,
 
-  const [msg, setMsg] =
-    useState("");
+    releaseLock,
 
-  const [lock, setLock] =
-    useState({
-      is_locked:false,
-      locked_by:null,
-      locked_at:null
-    });
+    setLockMessage
 
-  const totals = useMemo(()=>{
+  } = useEditLock();
 
-    const A = rows.reduce(
-      (t,r)=>t+num(r.blash1),0
-    );
+  const {
 
-    const B = rows.reduce(
-      (t,r)=>t+num(r.blash2),0
-    );
+    rows,
 
-    const C = rows.reduce(
-      (t,r)=>t+num(r.return_ac),0
-    );
+    rowCount,
 
-    const D = rows.reduce(
-      (t,r)=>t+num(r.deposit),0
-    );
+    loading,
 
-    return{
+    saving,
 
-      A,
+    message,
 
-      B,
+    formattedTotals,
 
-      C,
+    changeValue,
 
-      D,
+    handleAddRow,
 
-      F:A,
+    handleDeleteRow,
 
-      G:A+B,
+    handleFixUp,
 
-      H:A+B+C,
+    handleUpdate
 
-      I:A+B+C-D
+  } = useCashBook({
 
-    };
+    editing,
 
-  },[rows]);
+    releaseLock
 
-  async function loadRows(){
+  });
 
-    const {data,error}=await supabase
+  const status =
 
-    .from("cash_book")
+    lockMessage ||
 
-    .select("*")
-
-    .order("row_no");
-
-    if(error){
-
-      setMsg(error.message);
-
-      return;
-
-    }
-
-    const list=(data||[]).map(r=>({
-
-      ...r,
-
-      balance:balance(r)
-
-    }));
-
-    setRows(list);
-
-  }
-
-  async function loadLock(){
-
-    const {data,error}=await supabase
-
-    .from("edit_lock")
-
-    .select("*")
-
-    .eq("id",1)
-
-    .single();
-
-    if(error){
-
-      setMsg(error.message);
-
-      return;
-
-    }
-
-    if(
-      data.is_locked &&
-      data.locked_at
-    ){
-
-      const t=new Date(data.locked_at).getTime();
-
-      if(Date.now()-t>LOCK_TIMEOUT){
-
-        await supabase
-
-        .from("edit_lock")
-
-        .update({
-
-          is_locked:false,
-
-          locked_by:null,
-
-          locked_at:null
-
-        })
-
-        .eq("id",1);
-
-        setLock({
-
-          is_locked:false,
-
-          locked_by:null,
-
-          locked_at:null
-
-        });
-
-        return;
-
-      }
-
-    }
-
-    setLock(data);
-
-  }
-
-  async function load(){
-
-    setLoading(true);
-
-    await Promise.all([
-
-      loadRows(),
-
-      loadLock()
-
-    ]);
-
-    setLoading(false);
-
-  }
-
-  useEffect(()=>{
-
-    load();
-
-  },[]);
-    useEffect(() => {
-
-    const channel = supabase
-
-      .channel("cashbook")
-
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cash_book"
-        },
-        () => {
-
-          if (!editing) {
-
-            loadRows();
-
-          }
-
-        }
-      )
-
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "edit_lock",
-          filter: "id=eq.1"
-        },
-        (payload) => {
-
-          if (!payload.new) return;
-
-          setLock(payload.new);
-
-          if (
-            !payload.new.is_locked ||
-            payload.new.locked_by !== myId.current
-          ) {
-
-            setEditing(false);
-
-          }
-
-        }
-      )
-
-      .subscribe();
-
-    return () => {
-
-      supabase.removeChannel(channel);
-
-    };
-
-  }, [editing]);
-
-  useEffect(() => {
-
-    if (!editing) return;
-
-    const timer = setInterval(async () => {
-
-      await supabase
-
-        .from("edit_lock")
-
-        .update({
-
-          locked_at: new Date().toISOString()
-
-        })
-
-        .eq("id",1)
-
-        .eq("locked_by",myId.current);
-
-    }, HEARTBEAT);
-
-    return ()=>clearInterval(timer);
-
-  },[editing]);
-
-  async function edit(){
-
-    setMsg("");
-
-    const {data,error}=await supabase
-
-      .from("edit_lock")
-
-      .select("*")
-
-      .eq("id",1)
-
-      .single();
-
-    if(error){
-
-      setMsg(error.message);
-
-      return;
-
-    }
-
-    if(
-
-      data.is_locked &&
-
-      data.locked_by!==myId.current
-
-    ){
-
-      setMsg("Editing, Please Wait!");
-
-      return;
-
-    }
-
-    const {error:updateError}=await supabase
-
-      .from("edit_lock")
-
-      .update({
-
-        is_locked:true,
-
-        locked_by:myId.current,
-
-        locked_at:new Date().toISOString()
-
-      })
-
-      .eq("id",1);
-
-    if(updateError){
-
-      setMsg(updateError.message);
-
-      return;
-
-    }
-
-    setEditing(true);
-
-    await loadLock();
-
-  }
-
-  function change(index,key,value){
-
-    if(!editing) return;
-
-    setRows(old=>old.map((r,i)=>{
-
-      if(i!==index) return r;
-
-      const row={
-
-        ...r,
-
-        [key]:value
-
-      };
-
-      row.balance=balance(row);
-
-      return row;
-
-    }));
-
-  }
-
-  function addRow(){
-
-    if(!editing) return;
-
-    const next=
-
-      rows.length===0
-
-      ?1
-
-      :Math.max(...rows.map(r=>r.row_no))+1;
-
-    setRows([
-
-      ...rows,
-
-      {
-
-        row_no:next,
-
-        note:"",
-
-        blash1:"",
-
-        blash2:"",
-
-        return_ac:"",
-
-        deposit:"",
-
-        balance:0
-
-      }
-
-    ]);
-
-  }
-
-  function fixUp(){
-
-    if(!editing) return;
-
-    const filled=[];
-
-    const empty=[];
-
-    rows.forEach(r=>{
-
-      const hasData=
-
-        r.note ||
-
-        num(r.blash1)!==0 ||
-
-        num(r.blash2)!==0 ||
-
-        num(r.return_ac)!==0 ||
-
-        num(r.deposit)!==0;
-
-      if(hasData){
-
-        filled.push(r);
-
-      }else{
-
-        empty.push(r);
-
-      }
-
-    });
-
-    const list=[...filled,...empty]
-
-      .map((r,i)=>({
-
-        ...r,
-
-        row_no:i+1,
-
-        balance:balance(r)
-
-      }));
-
-    setRows(list);
-
-                        }
-    async function update() {
-
-    if (!editing) {
-
-      setMsg("Press EDIT first.");
-
-      return;
-
-    }
-
-    setSaving(true);
-
-    const saveRows = rows.map(r => ({
-
-      row_no: r.row_no,
-
-      note: r.note,
-
-      blash1: num(r.blash1),
-
-      blash2: num(r.blash2),
-
-      return_ac: num(r.return_ac),
-
-      deposit: num(r.deposit),
-
-      balance: balance(r),
-
-      updated_at: new Date().toISOString()
-
-    }));
-
-    const { error } = await supabase
-
-      .from("cash_book")
-
-      .upsert(saveRows, {
-
-        onConflict: "row_no"
-
-      });
-
-    if (error) {
-
-      setSaving(false);
-
-      setMsg(error.message);
-
-      return;
-
-    }
-
-    await supabase
-
-      .from("edit_lock")
-
-      .update({
-
-        is_locked: false,
-
-        locked_by: null,
-
-        locked_at: null
-
-      })
-
-      .eq("id", 1);
-
-    setEditing(false);
-
-    setSaving(false);
-
-    setMsg("Saved");
-
-    await load();
-
-  }
+    message;
 
   if (loading) {
 
@@ -584,9 +78,13 @@ export default function DataTable() {
       <div className="action-bar">
 
         <button
+
           className="edit-button"
-          onClick={edit}
+
           disabled={editing}
+
+          onClick={startEditing}
+
         >
 
           EDIT
@@ -594,9 +92,13 @@ export default function DataTable() {
         </button>
 
         <button
+
           className="update-button"
-          onClick={update}
+
           disabled={!editing || saving}
+
+          onClick={handleUpdate}
+
         >
 
           {saving ? "SAVING..." : "UPDATE"}
@@ -604,9 +106,13 @@ export default function DataTable() {
         </button>
 
         <button
+
           className="edit-button"
-          onClick={addRow}
+
           disabled={!editing}
+
+          onClick={handleAddRow}
+
         >
 
           ADD ROW
@@ -614,9 +120,27 @@ export default function DataTable() {
         </button>
 
         <button
+
           className="edit-button"
-          onClick={fixUp}
+
           disabled={!editing}
+
+          onClick={handleDeleteRow}
+
+        >
+
+          DELETE ROW
+
+        </button>
+
+        <button
+
+          className="edit-button"
+
+          disabled={!editing}
+
+          onClick={handleFixUp}
+
         >
 
           FIX UP
@@ -625,11 +149,21 @@ export default function DataTable() {
 
       </div>
 
-      {msg && (
+      {lockedByOther && (
+
+        <div className="warning-message">
+
+          Editing, Please Wait!
+
+        </div>
+
+      )}
+
+      {status && !lockedByOther && (
 
         <div className="status-message">
 
-          {msg}
+          {status}
 
         </div>
 
@@ -662,29 +196,28 @@ export default function DataTable() {
           </thead>
 
           <tbody>
+                        {rows.map((row, index) => (
 
-            {rows.map((r, i) => (
+              <tr key={row.row_no}>
 
-              <tr key={r.row_no}>
-
-                <td>{r.row_no}</td>
+                <td className="row-number">
+                  {row.row_no}
+                </td>
 
                 <td>
 
                   <input
-
-                    value={r.note}
-
+                    className="note-input"
+                    type="text"
+                    value={row.note}
                     disabled={!editing}
-
-                    onChange={e =>
-                      change(
-                        i,
+                    onChange={(e)=>
+                      changeValue(
+                        index,
                         "note",
                         e.target.value
                       )
                     }
-
                   />
 
                 </td>
@@ -692,21 +225,17 @@ export default function DataTable() {
                 <td>
 
                   <input
-
+                    className="money-input"
                     type="number"
-
-                    value={r.blash1}
-
+                    value={row.blash1}
                     disabled={!editing}
-
-                    onChange={e =>
-                      change(
-                        i,
+                    onChange={(e)=>
+                      changeValue(
+                        index,
                         "blash1",
                         e.target.value
                       )
                     }
-
                   />
 
                 </td>
@@ -714,56 +243,61 @@ export default function DataTable() {
                 <td>
 
                   <input
-
+                    className="money-input"
                     type="number"
-
-                    value={r.blash2}
-
+                    value={row.blash2}
                     disabled={!editing}
-
-                    onChange={e =>
-                      change(
-                        i,
+                    onChange={(e)=>
+                      changeValue(
+                        index,
                         "blash2",
                         e.target.value
                       )
                     }
-
                   />
 
                 </td>
-                                <td>
+
+                <td>
+
                   <input
+                    className="money-input"
                     type="number"
-                    value={r.return_ac}
+                    value={row.return_ac}
                     disabled={!editing}
-                    onChange={e =>
-                      change(
-                        i,
+                    onChange={(e)=>
+                      changeValue(
+                        index,
                         "return_ac",
                         e.target.value
                       )
                     }
                   />
+
                 </td>
 
                 <td>
+
                   <input
+                    className="money-input"
                     type="number"
-                    value={r.deposit}
+                    value={row.deposit}
                     disabled={!editing}
-                    onChange={e =>
-                      change(
-                        i,
+                    onChange={(e)=>
+                      changeValue(
+                        index,
                         "deposit",
                         e.target.value
                       )
                     }
                   />
+
                 </td>
 
                 <td className="balance-cell">
-                  {money(balance(r))}
+
+                  {row.balance}
+
                 </td>
 
               </tr>
@@ -782,21 +316,13 @@ export default function DataTable() {
                 TOTAL
               </td>
 
-              <td>
-                {money(totals.A)}
-              </td>
+              <td>{formattedTotals.A}</td>
 
-              <td>
-                {money(totals.B)}
-              </td>
+              <td>{formattedTotals.B}</td>
 
-              <td>
-                {money(totals.C)}
-              </td>
+              <td>{formattedTotals.C}</td>
 
-              <td>
-                {money(totals.D)}
-              </td>
+              <td>{formattedTotals.D}</td>
 
               <td></td>
 
@@ -810,23 +336,17 @@ export default function DataTable() {
                 SUMMARY
               </td>
 
-              <td>
-                {money(totals.F)}
-              </td>
+              <td>{formattedTotals.F}</td>
 
-              <td>
-                {money(totals.G)}
-              </td>
+              <td>{formattedTotals.G}</td>
 
-              <td>
-                {money(totals.H)}
-              </td>
+              <td>{formattedTotals.H}</td>
 
               <td
                 colSpan="2"
                 className="final-total"
               >
-                {money(totals.I)}
+                {formattedTotals.I}
               </td>
 
             </tr>
@@ -837,8 +357,18 @@ export default function DataTable() {
 
       </div>
 
+      <div
+        style={{
+          padding: "10px 16px",
+          fontWeight: 700,
+          color: "#64748b"
+        }}
+      >
+        Total Rows : {rowCount}
+      </div>
+
     </div>
 
   );
 
-}
+          }
