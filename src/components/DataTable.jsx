@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-const EMPTY_ROWS = Array.from({ length: 40 }, (_, index) => ({
+const ROW_COUNT = 40;
+const LOCK_TIMEOUT_MS = 3 * 60 * 1000;
+const HEARTBEAT_MS = 30 * 1000;
+
+const EMPTY_ROWS = Array.from({ length: ROW_COUNT }, (_, index) => ({
   row_no: index + 1,
   note: "",
   blash1: "",
@@ -12,64 +16,110 @@ const EMPTY_ROWS = Array.from({ length: 40 }, (_, index) => ({
 }));
 
 function toNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function displayNumber(value) {
-  const number = toNumber(value);
-
-  return number.toLocaleString(undefined, {
+function formatNumber(value) {
+  return toNumber(value).toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
 }
 
-function makeEditorId() {
-  const savedId = sessionStorage.getItem("cashbook_editor_id");
+function calculateBalance(row) {
+  return (
+    toNumber(row.blash1) +
+    toNumber(row.blash2) +
+    toNumber(row.return_ac) -
+    toNumber(row.deposit)
+  );
+}
 
-  if (savedId) return savedId;
+function createEditorId() {
+  const savedEditorId = sessionStorage.getItem(
+    "cashbook_editor_id"
+  );
 
-  const newId =
+  if (savedEditorId) {
+    return savedEditorId;
+  }
+
+  const newEditorId =
     typeof crypto !== "undefined" && crypto.randomUUID
       ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random()}`;
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  sessionStorage.setItem("cashbook_editor_id", newId);
-  return newId;
+  sessionStorage.setItem("cashbook_editor_id", newEditorId);
+
+  return newEditorId;
+}
+
+function isLockExpired(currentLock) {
+  if (!currentLock?.is_locked) {
+    return false;
+  }
+
+  if (!currentLock.locked_at) {
+    return true;
+  }
+
+  const lockedTime = new Date(
+    currentLock.locked_at
+  ).getTime();
+
+  if (!Number.isFinite(lockedTime)) {
+    return true;
+  }
+
+  return Date.now() - lockedTime > LOCK_TIMEOUT_MS;
 }
 
 export default function DataTable() {
-  const editorId = useRef(makeEditorId());
+  const editorId = useRef(createEditorId());
 
   const [rows, setRows] = useState(EMPTY_ROWS);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
   const [lock, setLock] = useState({
+    id: 1,
     is_locked: false,
     locked_by: null,
+    locked_at: null,
   });
-  const [message, setMessage] = useState("");
+
+  const editingRef = useRef(editing);
+  const lockRef = useRef(lock);
+
+  useEffect(() => {
+    editingRef.current = editing;
+  }, [editing]);
+
+  useEffect(() => {
+    lockRef.current = lock;
+  }, [lock]);
 
   const totals = useMemo(() => {
     const A = rows.reduce(
-      (sum, row) => sum + toNumber(row.blash1),
+      (total, row) => total + toNumber(row.blash1),
       0
     );
 
     const B = rows.reduce(
-      (sum, row) => sum + toNumber(row.blash2),
+      (total, row) => total + toNumber(row.blash2),
       0
     );
 
     const C = rows.reduce(
-      (sum, row) => sum + toNumber(row.return_ac),
+      (total, row) => total + toNumber(row.return_ac),
       0
     );
 
     const D = rows.reduce(
-      (sum, row) => sum + toNumber(row.deposit),
+      (total, row) => total + toNumber(row.deposit),
       0
     );
 
@@ -85,60 +135,6 @@ export default function DataTable() {
     };
   }, [rows]);
 
-  useEffect(() => {
-    loadInitialData();
-
-    const channel = supabase
-      .channel("cash-book-realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cash_book",
-        },
-        () => {
-          if (!editing) {
-            loadRows();
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "edit_lock",
-          filter: "id=eq.1",
-        },
-        (payload) => {
-          if (payload.new) {
-            setLock(payload.new);
-
-            if (
-              !payload.new.is_locked &&
-              payload.new.locked_by !== editorId.current
-            ) {
-              setEditing(false);
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [editing]);
-
-  async function loadInitialData() {
-    setLoading(true);
-
-    await Promise.all([loadRows(), loadLock()]);
-
-    setLoading(false);
-  }
-
   async function loadRows() {
     const { data, error } = await supabase
       .from("cash_book")
@@ -152,24 +148,62 @@ export default function DataTable() {
       return;
     }
 
-    const databaseRows = new Map(
+    const rowsByNumber = new Map(
       (data || []).map((row) => [row.row_no, row])
     );
 
-    setRows(
-      EMPTY_ROWS.map((emptyRow) => ({
+    const preparedRows = EMPTY_ROWS.map((emptyRow) => {
+      const databaseRow = rowsByNumber.get(
+        emptyRow.row_no
+      );
+
+      if (!databaseRow) {
+        return { ...emptyRow };
+      }
+
+      return {
         ...emptyRow,
-        ...databaseRows.get(emptyRow.row_no),
-        note: databaseRows.get(emptyRow.row_no)?.note ?? "",
-        blash1:
-          databaseRows.get(emptyRow.row_no)?.blash1 ?? "",
-        blash2:
-          databaseRows.get(emptyRow.row_no)?.blash2 ?? "",
-        return_ac:
-          databaseRows.get(emptyRow.row_no)?.return_ac ?? "",
-        deposit:
-          databaseRows.get(emptyRow.row_no)?.deposit ?? "",
-      }))
+        ...databaseRow,
+        note: databaseRow.note ?? "",
+        blash1: databaseRow.blash1 ?? "",
+        blash2: databaseRow.blash2 ?? "",
+        return_ac: databaseRow.return_ac ?? "",
+        deposit: databaseRow.deposit ?? "",
+        balance: calculateBalance(databaseRow),
+      };
+    });
+
+    setRows(preparedRows);
+  }
+
+  async function releaseExpiredLock(currentLock) {
+    if (!isLockExpired(currentLock)) {
+      return currentLock;
+    }
+
+    const { data, error } = await supabase
+      .from("edit_lock")
+      .update({
+        is_locked: false,
+        locked_by: null,
+        locked_at: null,
+      })
+      .eq("id", 1)
+      .eq("locked_by", currentLock.locked_by)
+      .select("id,is_locked,locked_by,locked_at")
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return (
+      data || {
+        id: 1,
+        is_locked: false,
+        locked_by: null,
+        locked_at: null,
+      }
     );
   }
 
@@ -181,19 +215,178 @@ export default function DataTable() {
       .single();
 
     if (error) {
-      setMessage(`Unable to load edit lock: ${error.message}`);
+      setMessage(
+        `Unable to load edit lock: ${error.message}`
+      );
       return;
     }
 
-    setLock(data);
+    try {
+      const checkedLock = await releaseExpiredLock(data);
+      setLock(checkedLock);
+    } catch (releaseError) {
+      setMessage(
+        `Unable to release expired lock: ${releaseError.message}`
+      );
+      setLock(data);
+    }
   }
 
-  async function handleEdit() {
+  async function loadInitialData() {
+    setLoading(true);
+
+    await Promise.all([loadRows(), loadLock()]);
+
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadInitialData();
+
+    const channel = supabase
+      .channel("cash-book-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cash_book",
+        },
+        () => {
+          if (!editingRef.current) {
+            loadRows();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "edit_lock",
+          filter: "id=eq.1",
+        },
+        (payload) => {
+          const newLock = payload.new;
+
+          if (!newLock) {
+            return;
+          }
+
+          setLock(newLock);
+
+          if (
+            !newLock.is_locked ||
+            newLock.locked_by !== editorId.current
+          ) {
+            setEditing(false);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!editing) {
+      return undefined;
+    }
+
+    if (lock.locked_by !== editorId.current) {
+      return undefined;
+    }
+
+    const heartbeatId = window.setInterval(async () => {
+      const currentTime = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from("edit_lock")
+        .update({
+          locked_at: currentTime,
+        })
+        .eq("id", 1)
+        .eq("is_locked", true)
+        .eq("locked_by", editorId.current)
+        .select("id,is_locked,locked_by,locked_at")
+        .maybeSingle();
+
+      if (error) {
+        console.error(
+          "Edit lock heartbeat failed:",
+          error.message
+        );
+        return;
+      }
+
+      if (data) {
+        setLock(data);
+      }
+    }, HEARTBEAT_MS);
+
+    return () => {
+      window.clearInterval(heartbeatId);
+    };
+  }, [editing, lock.locked_by]);
+
+  useEffect(() => {
+    function releaseLockOnExit() {
+      const currentLock = lockRef.current;
+
+      if (!editingRef.current) {
+        return;
+      }
+
+      if (currentLock.locked_by !== editorId.current) {
+        return;
+      }
+
+      supabase
+        .from("edit_lock")
+        .update({
+          is_locked: false,
+          locked_by: null,
+          locked_at: null,
+        })
+        .eq("id", 1)
+        .eq("locked_by", editorId.current)
+        .then(() => {});
+    }
+
+    window.addEventListener(
+      "pagehide",
+      releaseLockOnExit
+    );
+
+    window.addEventListener(
+      "beforeunload",
+      releaseLockOnExit
+    );
+
+    return () => {
+      window.removeEventListener(
+        "pagehide",
+        releaseLockOnExit
+      );
+
+      window.removeEventListener(
+        "beforeunload",
+        releaseLockOnExit
+      );
+    };
+  }, []);
+    async function handleEdit() {
+    if (saving) {
+      return;
+    }
+
     setMessage("");
 
     const { data: latestLock, error: readError } = await supabase
       .from("edit_lock")
-      .select("id,is_locked,locked_by")
+      .select("id,is_locked,locked_by,locked_at")
       .eq("id", 1)
       .single();
 
@@ -204,8 +397,30 @@ export default function DataTable() {
 
     if (
       latestLock.is_locked &&
-      latestLock.locked_by !== editorId.current
+      latestLock.locked_by === editorId.current
     ) {
+      setLock(latestLock);
+      setEditing(true);
+      setMessage("Edit mode enabled.");
+      return;
+    }
+
+    let availableLock = latestLock;
+
+    if (latestLock.is_locked && isLockExpired(latestLock)) {
+      try {
+        availableLock = await releaseExpiredLock(latestLock);
+        setLock(availableLock);
+      } catch (error) {
+        setMessage(
+          `Unable to release expired lock: ${error.message}`
+        );
+        return;
+      }
+    }
+
+    if (availableLock.is_locked) {
+      setLock(availableLock);
       setMessage("Editing, Please Wait!");
       return;
     }
@@ -238,24 +453,24 @@ export default function DataTable() {
   }
 
   function handleInput(rowIndex, field, value) {
-    if (!editing) return;
+    if (!editing) {
+      return;
+    }
 
     setRows((currentRows) =>
       currentRows.map((row, index) => {
-        if (index !== rowIndex) return row;
+        if (index !== rowIndex) {
+          return row;
+        }
 
-        const changedRow = {
+        const updatedRow = {
           ...row,
           [field]: value,
         };
 
-        changedRow.balance =
-          toNumber(changedRow.blash1) +
-          toNumber(changedRow.blash2) +
-          toNumber(changedRow.return_ac) -
-          toNumber(changedRow.deposit);
+        updatedRow.balance = calculateBalance(updatedRow);
 
-        return changedRow;
+        return updatedRow;
       })
     );
   }
@@ -269,6 +484,8 @@ export default function DataTable() {
     setSaving(true);
     setMessage("");
 
+    const updatedAt = new Date().toISOString();
+
     const updates = rows.map((row) => ({
       row_no: row.row_no,
       note: String(row.note ?? "").trim(),
@@ -276,12 +493,8 @@ export default function DataTable() {
       blash2: toNumber(row.blash2),
       return_ac: toNumber(row.return_ac),
       deposit: toNumber(row.deposit),
-      balance:
-        toNumber(row.blash1) +
-        toNumber(row.blash2) +
-        toNumber(row.return_ac) -
-        toNumber(row.deposit),
-      updated_at: new Date().toISOString(),
+      balance: calculateBalance(row),
+      updated_at: updatedAt,
     }));
 
     const { error: saveError } = await supabase
@@ -309,15 +522,18 @@ export default function DataTable() {
     if (unlockError) {
       setSaving(false);
       setMessage(
-  `Saved, but the edit lock could not be released: ${unlockError.message}`
-);
+        `Saved, but the edit lock could not be released: ${unlockError.message}`
+      );
       return;
     }
 
     setLock({
+      id: 1,
       is_locked: false,
       locked_by: null,
+      locked_at: null,
     });
+
     setEditing(false);
     setSaving(false);
     setMessage("Update and auto-save completed successfully.");
@@ -434,12 +650,7 @@ export default function DataTable() {
                 ))}
 
                 <td className="balance-cell">
-                  {displayNumber(
-                    toNumber(row.blash1) +
-                      toNumber(row.blash2) +
-                      toNumber(row.return_ac) -
-                      toNumber(row.deposit)
-                  )}
+                  {formatNumber(calculateBalance(row))}
                 </td>
               </tr>
             ))}
@@ -449,21 +660,22 @@ export default function DataTable() {
             <tr className="first-total-row">
               <td></td>
               <td className="total-label">TOTAL</td>
-              <td>{displayNumber(totals.A)}</td>
-              <td>{displayNumber(totals.B)}</td>
-              <td>{displayNumber(totals.C)}</td>
-              <td>{displayNumber(totals.D)}</td>
+              <td>{formatNumber(totals.A)}</td>
+              <td>{formatNumber(totals.B)}</td>
+              <td>{formatNumber(totals.C)}</td>
+              <td>{formatNumber(totals.D)}</td>
               <td></td>
             </tr>
 
             <tr className="second-total-row">
               <td></td>
               <td className="total-label">SUMMARY</td>
-              <td>{displayNumber(totals.F)}</td>
-              <td>{displayNumber(totals.G)}</td>
-              <td>{displayNumber(totals.H)}</td>
+              <td>{formatNumber(totals.F)}</td>
+              <td>{formatNumber(totals.G)}</td>
+              <td>{formatNumber(totals.H)}</td>
+
               <td colSpan="2" className="final-total">
-                {displayNumber(totals.I)}
+                {formatNumber(totals.I)}
               </td>
             </tr>
           </tfoot>
@@ -471,4 +683,4 @@ export default function DataTable() {
       </div>
     </section>
   );
-      }
+}
