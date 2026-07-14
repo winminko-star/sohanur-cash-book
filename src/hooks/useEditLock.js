@@ -294,6 +294,45 @@ return true;
       window.clearInterval(heartbeatId);
     };
   }, [editing, lock.locked_by]);
+  useEffect(() => {
+  const timeoutChecker = window.setInterval(async () => {
+    const { data, error } = await supabase
+      .from("edit_lock")
+      .select("id,is_locked,locked_by,locked_at")
+      .eq("id", 1)
+      .single();
+
+    if (error || !data?.is_locked || !data.locked_at) {
+      return;
+    }
+
+    const lockedTime = new Date(data.locked_at).getTime();
+    const expired =
+      Date.now() - lockedTime > LOCK_TIMEOUT_MS;
+
+    if (!expired) {
+      return;
+    }
+
+    await supabase
+      .from("edit_lock")
+      .update({
+        is_locked: false,
+        locked_by: null,
+        locked_at: null,
+      })
+      .eq("id", 1)
+      .eq("locked_by", data.locked_by);
+
+    setLock(EMPTY_LOCK);
+    setEditing(false);
+    setLockMessage("Edit session expired.");
+  }, 10000);
+
+  return () => {
+    window.clearInterval(timeoutChecker);
+  };
+}, []);
 
   useEffect(() => {
     function releaseLockOnExit() {
