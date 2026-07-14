@@ -1,23 +1,35 @@
 import { useState } from "react";
+import Login from "./components/Login";
 
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(
+    () => sessionStorage.getItem("cashbook_login") === "true"
+  );
 
-  const [login, setLogin] = useState(false);
+  function handleLogout() {
+    sessionStorage.removeItem("cashbook_login");
+    setIsLoggedIn(false);
+  }
 
-  if (!login) {
-    return (
-      <div>
-        LOGIN
-      </div>
-    );
+  if (!isLoggedIn) {
+    return <Login onLogin={() => setIsLoggedIn(true)} />;
   }
 
   return (
-    <div>
+    <main className="temporary-home">
+      <section className="temporary-card">
+        <h1>Sohanur Cash Book</h1>
 
-      CASH BOOK
+        <p>Login အောင်မြင်ပါတယ်။</p>
 
-    </div>
+        <button
+          className="logout-button"
+          type="button"
+          onClick={handleLogout}
+        >
+          LOGOUT
+        </button>
+      </section>
+    </main>
   );
-
 }
