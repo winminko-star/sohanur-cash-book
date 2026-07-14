@@ -52,10 +52,8 @@ export default function DataTable() {
   });
 
   const status =
-
-    lockMessage ||
-
-    message;
+  message ||
+  lockMessage;
 
   if (loading) {
 
