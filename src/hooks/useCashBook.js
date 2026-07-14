@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import {
   calculateBalance,
   formatMoney,
+  isEmptyRow,
   toNumber,
 } from "../utils/calculator";
 
