@@ -20,40 +20,26 @@ export default function DataTable() {
   } = useEditLock();
 
   const {
+  rows,
+  rowCount,
+  loading,
+  saving,
+  message,
+  formattedTotals,
+  changeValue,
+  handleAddRow,
+  handleDeleteRow,
+  handleFixUp,
+  handleUpdate,
+  setMessage
+} = useCashBook({
+  editing,
+  releaseLock
+});
 
-    rows,
-
-    rowCount,
-
-    loading,
-
-    saving,
-
-    message,
-
-    formattedTotals,
-
-    changeValue,
-
-    handleAddRow,
-
-    handleDeleteRow,
-
-    handleFixUp,
-
-    handleUpdate
-
-  } = useCashBook({
-
-    editing,
-
-    releaseLock
-
-  });
-
-  const status =
-  message ||
-  lockMessage;
+  const status = editing
+  ? lockMessage
+  : message || lockMessage;
 
   if (loading) {
 
@@ -76,18 +62,15 @@ export default function DataTable() {
       <div className="action-bar">
 
         <button
-
-          className="edit-button"
-
-          disabled={editing}
-
-          onClick={startEditing}
-
-        >
-
-          EDIT
-
-        </button>
+  className="edit-button"
+  disabled={editing}
+  onClick={async () => {
+    setMessage("");
+    await startEditing();
+  }}
+>
+  EDIT
+</button>
 
         <button
 
