@@ -10,7 +10,7 @@ import {
 
 import { addRow } from "../utils/addRow";
 import { fixUpRows } from "../utils/fixUp";
-import { deleteLastEmptyRow } from "../utils/deleteRow";
+
 
 const DEFAULT_ROW_COUNT = 40;
 
@@ -209,17 +209,37 @@ export default function useCashBook({
     setMessage("Rows reorganized.");
   }
 
-  function handleDeleteRow() {
-    if (!editing) {
-      return;
-    }
+  async function handleDeleteRow() {
+  if (!editing) {
+    setMessage("Press EDIT first.");
+    return;
+  }
 
-    const result =
-      deleteLastEmptyRow(rows);
+  if (rows.length <= DEFAULT_ROW_COUNT) {
+    setMessage("The first 40 rows cannot be deleted.");
+    return;
+  }
 
-    setRows(result.rows);
+  const lastRow = rows[rows.length - 1];
 
-    setMessage(result.message);
+  if (!isEmptyRow(lastRow)) {
+    setMessage("Only the last empty row can be deleted.");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("cash_book")
+    .delete()
+    .eq("row_no", lastRow.row_no);
+
+  if (error) {
+    setMessage(`Delete failed: ${error.message}`);
+    return;
+  }
+
+  setRows((currentRows) => currentRows.slice(0, -1));
+
+  setMessage(`Row ${lastRow.row_no} deleted.`);
   }
 
   const rowCount = rows.length;
