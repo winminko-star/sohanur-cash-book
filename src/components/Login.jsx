@@ -22,7 +22,7 @@ export default function Login({ onLogin }) {
       return;
     }
 
-    setError("Username သို့မဟုတ် Password မှားနေပါတယ်။");
+    setError("Incorrect username or password.");
   }
 
   return (
@@ -33,8 +33,8 @@ export default function Login({ onLogin }) {
         <h1>Sohanur Cash Book</h1>
 
         <p className="login-subtitle">
-          ငွေစာရင်းစနစ်ထဲ ဝင်ရန် Login လုပ်ပါ
-        </p>
+  Login to access the cash book
+</p>
 
         <form onSubmit={handleSubmit}>
           <label className="form-label" htmlFor="username">
