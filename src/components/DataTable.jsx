@@ -148,7 +148,7 @@ export default function DataTable() {
       .order("row_no", { ascending: true });
 
     if (error) {
-      setMessage(`Data မဖတ်နိုင်ပါ: ${error.message}`);
+      setMessage(`Unable to load data: ${error.message}`);
       return;
     }
 
@@ -181,7 +181,7 @@ export default function DataTable() {
       .single();
 
     if (error) {
-      setMessage(`Lock မဖတ်နိုင်ပါ: ${error.message}`);
+      setMessage(`Unable to load edit lock: ${error.message}`);
       return;
     }
 
@@ -198,7 +198,7 @@ export default function DataTable() {
       .single();
 
     if (readError) {
-      setMessage(`EDIT မဖွင့်နိုင်ပါ: ${readError.message}`);
+      setMessage(`Unable to start editing: ${readError.message}`);
       return;
     }
 
@@ -222,7 +222,7 @@ export default function DataTable() {
       .select("id,is_locked,locked_by,locked_at");
 
     if (error) {
-      setMessage(`EDIT မဖွင့်နိုင်ပါ: ${error.message}`);
+      setMessage(`Unable to start editing: ${error.message}`);
       return;
     }
 
@@ -234,7 +234,7 @@ export default function DataTable() {
 
     setLock(data[0]);
     setEditing(true);
-    setMessage("EDIT ဖွင့်ပြီးပါပြီ။");
+    setMessage("Edit mode enabled.");
   }
 
   function handleInput(rowIndex, field, value) {
@@ -262,7 +262,7 @@ export default function DataTable() {
 
   async function handleUpdate() {
     if (!editing || lock.locked_by !== editorId.current) {
-      setMessage("EDIT ကို အရင်နှိပ်ပါ။");
+      setMessage("Press EDIT first.");
       return;
     }
 
@@ -292,7 +292,7 @@ export default function DataTable() {
 
     if (saveError) {
       setSaving(false);
-      setMessage(`Save မအောင်မြင်ပါ: ${saveError.message}`);
+      setMessage(`Save failed: ${saveError.message}`);
       return;
     }
 
@@ -309,8 +309,8 @@ export default function DataTable() {
     if (unlockError) {
       setSaving(false);
       setMessage(
-        `Save ပြီးပေမယ့် Lock မပွင့်ပါ: ${unlockError.message}`
-      );
+  `Saved, but the edit lock could not be released: ${unlockError.message}`
+);
       return;
     }
 
@@ -320,7 +320,7 @@ export default function DataTable() {
     });
     setEditing(false);
     setSaving(false);
-    setMessage("UPDATE နှင့် Auto Save အောင်မြင်ပါတယ်။");
+    setMessage("Update and auto-save completed successfully.");
 
     await loadRows();
   }
