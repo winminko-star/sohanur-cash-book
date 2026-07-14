@@ -2,7 +2,7 @@ import DataTable from "../components/DataTable";
 
 export default function Home() {
   function handleLogout() {
-    sessionStorage.removeItem("cashbook_login");
+    localStorage.removeItem("cashbook_login");
     window.location.reload();
   }
 
