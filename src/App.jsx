@@ -6,7 +6,7 @@ import Home from "./pages/Home";
 export default function App() {
 
   const [login,setLogin]=useState(
-    sessionStorage.getItem("cashbook_login")==="true"
+    localStorage.getItem("cashbook_login")==="true"
   );
 
   if(!login){
