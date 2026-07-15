@@ -210,7 +210,7 @@ const [autoUnlockVersion, setAutoUnlockVersion] =
     ) {
       setLock(availableLock);
       setEditing(false);
-      setLockMessage("Editing, Please Wait!");
+      setLockMessage("Editing, Please Wait!(সম্পাদনা চলছে। অনুগ্রহ করে অপেক্ষা করুন।)");
 
       return false;
     }
