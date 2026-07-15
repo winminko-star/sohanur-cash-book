@@ -1,6 +1,6 @@
 Sohanurrr { useState } from "react";
 
-const USERNAME = "sohanur";
+const USERNAME = "Sohanur";
 const PASSWORD = "006007";
 
 export default function Login({ onLogin }) {
