@@ -25,7 +25,7 @@ export default function DataTable() {
   changeValue,
   handleAddRow,
   handleDeleteRow,
-  handleDeleteRow,
+  handleDeleteAll,
   handleFixUp,
   handleUpdate,
   setMessage
