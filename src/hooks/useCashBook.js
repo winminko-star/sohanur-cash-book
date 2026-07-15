@@ -36,6 +36,7 @@ function createDefaultRows() {
 export default function useCashBook({
   editing,
   releaseLock,
+  markActivity,
 }) {
   const [rows, setRows] = useState(createDefaultRows);
   const [loading, setLoading] = useState(true);
@@ -165,6 +166,7 @@ export default function useCashBook({
     if (!editing) {
       return;
     }
+      markActivity?.();
 
     setRows((currentRows) =>
       currentRows.map((row, index) => {
