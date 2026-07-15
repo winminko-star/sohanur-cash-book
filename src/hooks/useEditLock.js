@@ -261,7 +261,7 @@ const [autoUnlockVersion, setAutoUnlockVersion] =
 
     setLock(data[0]);
     setEditing(true);
-    setLockMessage("Edit mode enabled.");
+    setLockMessage("Edit mode enabled.(এডিট মোড চালু হয়েছে।)");
 
     return true;
   }, [loadLock, releaseExpiredLock]);
