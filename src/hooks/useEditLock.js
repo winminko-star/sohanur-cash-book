@@ -69,9 +69,11 @@ export default function useEditLock() {
   const editorId = useRef(createEditorId());
 
   const [editing, setEditing] = useState(false);
-  const [lock, setLock] = useState(EMPTY_LOCK);
-  const [lockMessage, setLockMessage] =
-    useState("");
+const [lock, setLock] = useState(EMPTY_LOCK);
+const [lockMessage, setLockMessage] =
+  useState("");
+const [autoUnlockVersion, setAutoUnlockVersion] =
+  useState(0);
 
   const editingRef = useRef(false);
   const lockRef = useRef(EMPTY_LOCK);
@@ -331,6 +333,7 @@ export default function useEditLock() {
     setLockMessage(
       "Edit session closed after 3 minutes of inactivity."
     );
+    setAutoUnlockVersion((current) => current + 1);
   }, [clearInactivityTimer]);
 
   const markActivity = useCallback(() => {
@@ -513,14 +516,15 @@ export default function useEditLock() {
     lock.locked_by !== editorId.current;
 
   return {
-    editing,
-    lock,
-    lockMessage,
-    lockedByOther,
-    startEditing,
-    releaseLock,
-    loadLock,
-    setLockMessage,
-    markActivity,
-  };
+  editing,
+  lock,
+  lockMessage,
+  lockedByOther,
+  startEditing,
+  releaseLock,
+  loadLock,
+  setLockMessage,
+  markActivity,
+  autoUnlockVersion,
+};
 }
