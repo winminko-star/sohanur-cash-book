@@ -218,7 +218,7 @@ export default function DataTable() {
                   <input
                     className="money-input"
                     type="number"
-                    value={row.blash1}
+                    value={row.blash1 || ""}
                     disabled={!editing}
                     onChange={(e)=>
                       changeValue(
@@ -236,7 +236,7 @@ export default function DataTable() {
                   <input
                     className="money-input"
                     type="number"
-                    value={row.blash2}
+                    value={row.blash2 || ""}
                     disabled={!editing}
                     onChange={(e)=>
                       changeValue(
@@ -254,7 +254,7 @@ export default function DataTable() {
                   <input
                     className="money-input"
                     type="number"
-                    value={row.return_ac}
+                    value={row.return_ac || ""}
                     disabled={!editing}
                     onChange={(e)=>
                       changeValue(
@@ -272,7 +272,7 @@ export default function DataTable() {
                   <input
                     className="money-input"
                     type="number"
-                    value={row.deposit}
+                    value={row.deposit || ""}
                     disabled={!editing}
                     onChange={(e)=>
                       changeValue(
@@ -286,10 +286,8 @@ export default function DataTable() {
                 </td>
 
                 <td className="balance-cell">
-
-                  {row.balance}
-
-                </td>
+  {row.balance === 0 ? "" : row.balance}
+</td>
 
               </tr>
 
