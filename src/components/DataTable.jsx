@@ -25,6 +25,7 @@ export default function DataTable() {
   changeValue,
   handleAddRow,
   handleDeleteRow,
+  handleDeleteRow,
   handleFixUp,
   handleUpdate,
   setMessage
@@ -123,6 +124,13 @@ export default function DataTable() {
           DELETE ROW
 
         </button>
+        <button
+  className="delete-all-button"
+  disabled={!editing || saving}
+  onClick={handleDeleteAll}
+>
+  {saving ? "PLEASE WAIT..." : "CLEAR ALL DATA"}
+</button>
 
         <button
 
