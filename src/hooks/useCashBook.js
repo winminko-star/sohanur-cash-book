@@ -268,7 +268,7 @@ export default function useCashBook({
   const firstConfirm = window.confirm(
     "CLEAR ALL DATA?\n\n" +
       "All notes and money values will be erased.\n" +
-      "Rows 1 to 40 will remain."
+      "সব নোট এবং টাকার তথ্য মুছে ফেলা হবে।"
   );
 
   if (!firstConfirm) {
