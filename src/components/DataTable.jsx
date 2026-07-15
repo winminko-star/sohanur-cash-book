@@ -143,10 +143,8 @@ export default function DataTable() {
       {lockedByOther && (
 
         <div className="warning-message">
-
-          Editing, Please Wait!
-
-        </div>
+  Editing, Please Wait! (সম্পাদনা চলছে। অনুগ্রহ করে অপেক্ষা করুন।)
+</div>
 
       )}
 
