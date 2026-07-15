@@ -28,7 +28,10 @@ export default function Login({ onLogin }) {
   return (
     <main className="login-page">
       <section className="login-card">
-        <div className="login-logo">💰</div>
+        <div className="login-logo">
+  <span>💰</span>
+  <span className="crescent">☪️</span>
+</div>
 
         <h1>Sohanur Cash Book</h1>
 
