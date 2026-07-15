@@ -567,3 +567,32 @@ text-align:center;
 .crescent {
   font-size: 32px;
 }
+.delete-all-button {
+  min-height: 42px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    transform 0.15s ease,
+    opacity 0.2s ease;
+}
+
+.delete-all-button:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.delete-all-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.delete-all-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
