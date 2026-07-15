@@ -259,6 +259,106 @@ export default function useCashBook({
     }),
     [totals]
   );
+  async function handleDeleteAll() {
+  if (!editing) {
+    setMessage("Press EDIT first.");
+    return false;
+  }
+
+  const firstConfirm = window.confirm(
+    "CLEAR ALL DATA?\n\n" +
+      "All notes and money values will be erased.\n" +
+      "Rows 1 to 40 will remain."
+  );
+
+  if (!firstConfirm) {
+    return false;
+  }
+
+  const secondConfirm = window.confirm(
+    "Are you completely sure?\n\n" +
+      "This action cannot be undone."
+  );
+
+  if (!secondConfirm) {
+    return false;
+  }
+
+  setSaving(true);
+  setMessage("");
+
+  try {
+    const updatedAt = new Date().toISOString();
+
+    /*
+      Row 1 မှ 40 အထိ blank data ပြန်တည်ဆောက်မယ်။
+      Database ထဲမှာ မရှိတဲ့ row ရှိရင်လည်း upsert က ပြန်ဖန်တီးပေးမယ်။
+    */
+    const emptyDefaultRows = Array.from(
+      { length: DEFAULT_ROW_COUNT },
+      (_, index) => ({
+        row_no: index + 1,
+        note: "",
+        blash1: 0,
+        blash2: 0,
+        return_ac: 0,
+        deposit: 0,
+        balance: 0,
+        updated_at: updatedAt,
+      })
+    );
+
+    /*
+      Row 1 မှ 40 ကို data အလွတ်နဲ့ update/upsert လုပ်မယ်။
+    */
+    const { error: clearError } = await supabase
+      .from("cash_book")
+      .upsert(emptyDefaultRows, {
+        onConflict: "row_no",
+      });
+
+    if (clearError) {
+      throw clearError;
+    }
+
+    /*
+      ADD ROW နဲ့ဖန်တီးထားတဲ့ Row 41 အထက်ကို database ကနေဖျက်မယ်။
+    */
+    const { error: deleteExtraRowsError } = await supabase
+      .from("cash_book")
+      .delete()
+      .gt("row_no", DEFAULT_ROW_COUNT);
+
+    if (deleteExtraRowsError) {
+      throw deleteExtraRowsError;
+    }
+
+    /*
+      Screen ပေါ်က table ကိုလည်း Row 40 အလွတ်ဖြစ်အောင်လုပ်မယ်။
+    */
+    setRows(createDefaultRows());
+
+    setMessage(
+      "All cash book data cleared successfully."
+    );
+
+    markActivity?.();
+
+    return true;
+  } catch (error) {
+    console.error("Clear all data error:", error);
+
+    setMessage(
+      `Clear all failed: ${
+        error?.message || "Unknown error"
+      }`
+    );
+
+    return false;
+  } finally {
+    setSaving(false);
+  }
+  }
     async function handleUpdate() {
     if (!editing) {
       setMessage("Press EDIT first.");
@@ -312,19 +412,20 @@ export default function useCashBook({
   }
 
   return {
-    rows,
-    rowCount,
-    loading,
-    saving,
-    message,
-    totals,
-    formattedTotals,
-    loadRows,
-    changeValue,
-    handleAddRow,
-    handleDeleteRow,
-    handleFixUp,
-    handleUpdate,
-    setMessage,
-  };
+  rows,
+  rowCount,
+  loading,
+  saving,
+  message,
+  totals,
+  formattedTotals,
+  loadRows,
+  changeValue,
+  handleAddRow,
+  handleDeleteRow,
+  handleDeleteAll,
+  handleFixUp,
+  handleUpdate,
+  setMessage,
+};
 }
