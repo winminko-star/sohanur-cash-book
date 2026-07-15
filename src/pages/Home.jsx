@@ -19,7 +19,7 @@ export default function Home() {
           type="button"
           onClick={handleLogout}
         >
-          LOGOUT
+          LOGOUT(লগ আউট)
         </button>
       </header>
 
