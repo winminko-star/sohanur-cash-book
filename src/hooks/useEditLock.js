@@ -252,7 +252,7 @@ const [autoUnlockVersion, setAutoUnlockVersion] =
 
     if (!data || data.length === 0) {
       await loadLock();
-      setLockMessage("Editing, Please Wait!");
+      setLockMessage("Editing, Please Wait!(সম্পাদনা চলছে। অনুগ্রহ করে অপেক্ষা করুন।)");
 
       return false;
     }
