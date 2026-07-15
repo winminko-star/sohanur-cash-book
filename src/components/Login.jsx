@@ -1,7 +1,7 @@
 Sohanurrr { useState } from "react";
 
 const USERNAME = "Sohanur";
-const PASSWORD = "006007";
+const PASSWORD = "007008";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
