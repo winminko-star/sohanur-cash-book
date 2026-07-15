@@ -22,7 +22,7 @@ function createEmptyRow(rowNumber) {
     blash2: "",
     return_ac: "",
     deposit: "",
-    balance: 0,
+    balance: "",
   };
 }
 
