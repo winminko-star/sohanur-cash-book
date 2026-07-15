@@ -457,53 +457,74 @@ const [autoUnlockVersion, setAutoUnlockVersion] =
   ]);
 
   useEffect(() => {
-    function releaseLockOnExit() {
-      const currentLock = lockRef.current;
+  function releaseLockOnExit() {
+    const currentLock = lockRef.current;
 
-      if (!editingRef.current) {
-        return;
-      }
+    if (!editingRef.current) {
+      return;
+    }
 
-      if (
-        currentLock.locked_by !== editorId.current
-      ) {
-        return;
-      }
+    if (
+      currentLock.locked_by !== editorId.current
+    ) {
+      return;
+    }
 
-      supabase
-        .from("edit_lock")
-        .update({
+    const supabaseUrl =
+      import.meta.env.VITE_SUPABASE_URL;
+
+    const supabaseAnonKey =
+      import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    fetch(
+      `${supabaseUrl}/rest/v1/edit_lock?id=eq.1&locked_by=eq.${encodeURIComponent(
+        editorId.current
+      )}`,
+      {
+        method: "PATCH",
+
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+
+        body: JSON.stringify({
           is_locked: false,
           locked_by: null,
           locked_at: null,
-        })
-        .eq("id", 1)
-        .eq("locked_by", editorId.current)
-        .then(() => {});
-    }
+        }),
 
-    window.addEventListener(
+        keepalive: true,
+      }
+    ).catch(() => {});
+  }
+
+  window.addEventListener(
+    "pagehide",
+    releaseLockOnExit
+  );
+
+  window.addEventListener(
+    "beforeunload",
+    releaseLockOnExit
+  );
+
+  return () => {
+    window.removeEventListener(
       "pagehide",
       releaseLockOnExit
     );
 
-    window.addEventListener(
+    window.removeEventListener(
       "beforeunload",
       releaseLockOnExit
     );
 
-    return () => {
-      window.removeEventListener(
-        "pagehide",
-        releaseLockOnExit
-      );
-
-      window.removeEventListener(
-        "beforeunload",
-        releaseLockOnExit
-      );
-    };
-  }, []);
+    releaseLockOnExit();
+  };
+}, []);
 
   useEffect(() => {
     return () => {
