@@ -304,7 +304,7 @@ export default function useCashBook({
     }
 
     setSaving(false);
-    setMessage("Update and auto-save completed successfully.");
+    setMessage("Update and auto-save completed successfully.(আপডেট এবং স্বয়ংক্রিয় সংরক্ষণ সফলভাবে সম্পন্ন হয়েছে।)");
 
     await loadRows();
 
