@@ -4,20 +4,14 @@ import useEditLock from "../hooks/useEditLock";
 export default function DataTable() {
 
   const {
-
-    editing,
-
-    lockedByOther,
-
-    lockMessage,
-
-    startEditing,
-
-    releaseLock,
-
-    setLockMessage
-
-  } = useEditLock();
+  editing,
+  lockedByOther,
+  lockMessage,
+  startEditing,
+  releaseLock,
+  setLockMessage,
+  markActivity
+} = useEditLock();
 
   const {
   rows,
@@ -57,7 +51,13 @@ export default function DataTable() {
 
   return (
 
-    <div className="cashbook-panel">
+    <div
+  className="cashbook-panel"
+  onPointerDown={markActivity}
+  onKeyDown={markActivity}
+  onInput={markActivity}
+  onTouchStart={markActivity}
+>
 
       <div className="action-bar">
 
