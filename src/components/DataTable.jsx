@@ -1,6 +1,6 @@
+import { useEffect } from "react";
 import useCashBook from "../hooks/useCashBook";
 import useEditLock from "../hooks/useEditLock";
-
 export default function DataTable() {
 
   const {
@@ -10,7 +10,8 @@ export default function DataTable() {
   startEditing,
   releaseLock,
   setLockMessage,
-  markActivity
+  markActivity,
+  autoUnlockVersion
 } = useEditLock();
 
   const {
@@ -20,6 +21,7 @@ export default function DataTable() {
   saving,
   message,
   formattedTotals,
+  loadRows,
   changeValue,
   handleAddRow,
   handleDeleteRow,
@@ -28,12 +30,20 @@ export default function DataTable() {
   setMessage
 } = useCashBook({
   editing,
-  releaseLock
+  releaseLock,
+  markActivity,
 });
 
   const status = editing
   ? lockMessage
   : message || lockMessage;
+  useEffect(() => {
+  if (autoUnlockVersion === 0) {
+    return;
+  }
+
+  loadRows();
+}, [autoUnlockVersion, loadRows]);
 
   if (loading) {
 
