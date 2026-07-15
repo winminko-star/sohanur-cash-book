@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import { supabase } from "../lib/supabase";
 
-const LOCK_TIMEOUT_MS = 3 * 60 * 1000;
-
+const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000;
+const ACTIVITY_SYNC_INTERVAL_MS = 10 * 1000;
 
 const EMPTY_LOCK = {
   id: 1,
@@ -12,38 +18,51 @@ const EMPTY_LOCK = {
 };
 
 function createEditorId() {
-  const savedId = sessionStorage.getItem("cashbook_editor_id");
+  const savedId = sessionStorage.getItem(
+    "cashbook_editor_id"
+  );
 
   if (savedId) {
     return savedId;
   }
 
   const newId =
-    typeof crypto !== "undefined" && crypto.randomUUID
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      : `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}`;
 
-  sessionStorage.setItem("cashbook_editor_id", newId);
+  sessionStorage.setItem(
+    "cashbook_editor_id",
+    newId
+  );
 
   return newId;
 }
 
-function isExpired(lock) {
-  if (!lock?.is_locked) {
+function isLockExpired(currentLock) {
+  if (!currentLock?.is_locked) {
     return false;
   }
 
-  if (!lock.locked_at) {
+  if (!currentLock.locked_at) {
     return true;
   }
 
-  const lockedTime = new Date(lock.locked_at).getTime();
+  const lastActivityTime = new Date(
+    currentLock.locked_at
+  ).getTime();
 
-  if (!Number.isFinite(lockedTime)) {
+  if (!Number.isFinite(lastActivityTime)) {
     return true;
   }
 
-  return Date.now() - lockedTime > LOCK_TIMEOUT_MS;
+  return (
+    Date.now() - lastActivityTime >
+    INACTIVITY_TIMEOUT_MS
+  );
 }
 
 export default function useEditLock() {
@@ -51,10 +70,13 @@ export default function useEditLock() {
 
   const [editing, setEditing] = useState(false);
   const [lock, setLock] = useState(EMPTY_LOCK);
-  const [lockMessage, setLockMessage] = useState("");
+  const [lockMessage, setLockMessage] =
+    useState("");
 
   const editingRef = useRef(false);
   const lockRef = useRef(EMPTY_LOCK);
+  const inactivityTimerRef = useRef(null);
+  const lastActivitySyncRef = useRef(0);
 
   useEffect(() => {
     editingRef.current = editing;
@@ -64,59 +86,78 @@ export default function useEditLock() {
     lockRef.current = lock;
   }, [lock]);
 
-  const releaseExpiredLock = useCallback(async (currentLock) => {
-    if (!isExpired(currentLock)) {
-      return currentLock;
+  const clearInactivityTimer = useCallback(() => {
+    if (inactivityTimerRef.current) {
+      window.clearTimeout(
+        inactivityTimerRef.current
+      );
+
+      inactivityTimerRef.current = null;
     }
-
-    const { data, error } = await supabase
-      .from("edit_lock")
-      .update({
-        is_locked: false,
-        locked_by: null,
-        locked_at: null,
-      })
-      .eq("id", 1)
-      .eq("locked_by", currentLock.locked_by)
-      .select("id,is_locked,locked_by,locked_at")
-      .maybeSingle();
-
-    if (error) {
-      throw error;
-    }
-
-    return data || EMPTY_LOCK;
   }, []);
+
+  const releaseExpiredLock = useCallback(
+    async (currentLock) => {
+      if (!isLockExpired(currentLock)) {
+        return currentLock;
+      }
+
+      const { data, error } = await supabase
+        .from("edit_lock")
+        .update({
+          is_locked: false,
+          locked_by: null,
+          locked_at: null,
+        })
+        .eq("id", 1)
+        .eq("locked_by", currentLock.locked_by)
+        .select(
+          "id,is_locked,locked_by,locked_at"
+        )
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      return data || EMPTY_LOCK;
+    },
+    []
+  );
 
   const loadLock = useCallback(async () => {
     const { data, error } = await supabase
       .from("edit_lock")
-      .select("id,is_locked,locked_by,locked_at")
+      .select(
+        "id,is_locked,locked_by,locked_at"
+      )
       .eq("id", 1)
       .single();
 
     if (error) {
-      setLockMessage(`Unable to load edit lock: ${error.message}`);
+      setLockMessage(
+        `Unable to load edit lock: ${error.message}`
+      );
+
       return null;
     }
 
     try {
-      const checkedLock = await releaseExpiredLock(data);
+      const checkedLock =
+        await releaseExpiredLock(data);
 
       setLock(checkedLock);
 
-      if (
+      const ownedByThisEditor =
         checkedLock.is_locked &&
-        checkedLock.locked_by === editorId.current
-      ) {
-        setEditing(true);
-      } else {
-        setEditing(false);
-      }
+        checkedLock.locked_by === editorId.current;
+
+      setEditing(ownedByThisEditor);
 
       return checkedLock;
     } catch (releaseError) {
       setLock(data);
+
       setLockMessage(
         `Unable to release expired lock: ${releaseError.message}`
       );
@@ -128,22 +169,29 @@ export default function useEditLock() {
   const startEditing = useCallback(async () => {
     setLockMessage("");
 
-    const { data: currentLock, error: readError } = await supabase
-      .from("edit_lock")
-      .select("id,is_locked,locked_by,locked_at")
-      .eq("id", 1)
-      .single();
+    const { data: currentLock, error: readError } =
+      await supabase
+        .from("edit_lock")
+        .select(
+          "id,is_locked,locked_by,locked_at"
+        )
+        .eq("id", 1)
+        .single();
 
     if (readError) {
-      setLockMessage(`Unable to start editing: ${readError.message}`);
+      setLockMessage(
+        `Unable to start editing: ${readError.message}`
+      );
+
       return false;
     }
 
     let availableLock = currentLock;
 
-    if (isExpired(currentLock)) {
+    if (isLockExpired(currentLock)) {
       try {
-        availableLock = await releaseExpiredLock(currentLock);
+        availableLock =
+          await releaseExpiredLock(currentLock);
       } catch (releaseError) {
         setLockMessage(
           `Unable to release expired lock: ${releaseError.message}`
@@ -155,9 +203,11 @@ export default function useEditLock() {
 
     if (
       availableLock.is_locked &&
-      availableLock.locked_by !== editorId.current
+      availableLock.locked_by !==
+        editorId.current
     ) {
       setLock(availableLock);
+      setEditing(false);
       setLockMessage("Editing, Please Wait!");
 
       return false;
@@ -165,7 +215,8 @@ export default function useEditLock() {
 
     if (
       availableLock.is_locked &&
-      availableLock.locked_by === editorId.current
+      availableLock.locked_by ===
+        editorId.current
     ) {
       setLock(availableLock);
       setEditing(true);
@@ -174,19 +225,26 @@ export default function useEditLock() {
       return true;
     }
 
+    const startedAt = new Date().toISOString();
+
     const { data, error } = await supabase
       .from("edit_lock")
       .update({
         is_locked: true,
         locked_by: editorId.current,
-        locked_at: new Date().toISOString(),
+        locked_at: startedAt,
       })
       .eq("id", 1)
       .eq("is_locked", false)
-      .select("id,is_locked,locked_by,locked_at");
+      .select(
+        "id,is_locked,locked_by,locked_at"
+      );
 
     if (error) {
-      setLockMessage(`Unable to start editing: ${error.message}`);
+      setLockMessage(
+        `Unable to start editing: ${error.message}`
+      );
+
       return false;
     }
 
@@ -197,6 +255,8 @@ export default function useEditLock() {
       return false;
     }
 
+    lastActivitySyncRef.current = Date.now();
+
     setLock(data[0]);
     setEditing(true);
     setLockMessage("Edit mode enabled.");
@@ -205,6 +265,8 @@ export default function useEditLock() {
   }, [loadLock, releaseExpiredLock]);
 
   const releaseLock = useCallback(async () => {
+    clearInactivityTimer();
+
     const { error } = await supabase
       .from("edit_lock")
       .update({
@@ -216,18 +278,119 @@ export default function useEditLock() {
       .eq("locked_by", editorId.current);
 
     if (error) {
-      setLockMessage(`Unable to release edit lock: ${error.message}`);
+      setLockMessage(
+        `Unable to release edit lock: ${error.message}`
+      );
+
       return false;
     }
 
     setLock(EMPTY_LOCK);
-setEditing(false);
-setLockMessage("");
+    setEditing(false);
+    setLockMessage("");
 
-return true;
-  }, []);
+    return true;
+  }, [clearInactivityTimer]);
 
-  useEffect(() => {
+  const autoUnlock = useCallback(async () => {
+    const currentLock = lockRef.current;
+
+    if (!editingRef.current) {
+      return;
+    }
+
+    if (
+      currentLock.locked_by !== editorId.current
+    ) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("edit_lock")
+      .update({
+        is_locked: false,
+        locked_by: null,
+        locked_at: null,
+      })
+      .eq("id", 1)
+      .eq("locked_by", editorId.current);
+
+    if (error) {
+      setLockMessage(
+        `Auto unlock failed: ${error.message}`
+      );
+
+      return;
+    }
+
+    clearInactivityTimer();
+
+    setLock(EMPTY_LOCK);
+    setEditing(false);
+
+    setLockMessage(
+      "Edit session closed after 3 minutes of inactivity."
+    );
+  }, [clearInactivityTimer]);
+
+  const markActivity = useCallback(() => {
+    const currentLock = lockRef.current;
+
+    if (!editingRef.current) {
+      return;
+    }
+
+    if (
+      currentLock.locked_by !== editorId.current
+    ) {
+      return;
+    }
+
+    clearInactivityTimer();
+
+    inactivityTimerRef.current =
+      window.setTimeout(() => {
+        autoUnlock();
+      }, INACTIVITY_TIMEOUT_MS);
+
+    const now = Date.now();
+
+    if (
+      now - lastActivitySyncRef.current <
+      ACTIVITY_SYNC_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    lastActivitySyncRef.current = now;
+
+    const activeTime = new Date().toISOString();
+
+    supabase
+      .from("edit_lock")
+      .update({
+        locked_at: activeTime,
+      })
+      .eq("id", 1)
+      .eq("is_locked", true)
+      .eq("locked_by", editorId.current)
+      .then(({ error }) => {
+        if (error) {
+          console.error(
+            "Unable to update edit activity:",
+            error.message
+          );
+
+          return;
+        }
+
+        setLock((currentLockValue) => ({
+          ...currentLockValue,
+          locked_at: activeTime,
+        }));
+      });
+  }, [autoUnlock, clearInactivityTimer]);
+    useEffect(() => {
     loadLock();
 
     const channel = supabase
@@ -254,6 +417,10 @@ return true;
             nextLock.locked_by === editorId.current;
 
           setEditing(ownedByThisEditor);
+
+          if (!ownedByThisEditor) {
+            clearInactivityTimer();
+          }
         }
       )
       .subscribe();
@@ -261,94 +428,30 @@ return true;
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadLock]);
+  }, [loadLock, clearInactivityTimer]);
 
-useEffect(() => {
-  if (!editing) {
-    return undefined;
-  }
-
-  if (lock.locked_by !== editorId.current) {
-    return undefined;
-  }
-
-  const elapsed = lock.locked_at
-    ? Date.now() - new Date(lock.locked_at).getTime()
-    : 0;
-
-  const remainingTime = Math.max(
-    0,
-    LOCK_TIMEOUT_MS - elapsed
-  );
-
-  const timeoutId = window.setTimeout(async () => {
-    const { error } = await supabase
-      .from("edit_lock")
-      .update({
-        is_locked: false,
-        locked_by: null,
-        locked_at: null,
-      })
-      .eq("id", 1)
-      .eq("locked_by", editorId.current);
-
-    if (error) {
-      setLockMessage(
-        `Auto unlock failed: ${error.message}`
-      );
-      return;
-    }
-
-    setLock(EMPTY_LOCK);
-    setEditing(false);
-    setLockMessage(
-      "Edit session expired after 3 minutes."
-    );
-  }, remainingTime);
-
-  return () => {
-    window.clearTimeout(timeoutId);
-  };
-}, [editing, lock.locked_by, lock.locked_at]);
   useEffect(() => {
-  const timeoutChecker = window.setInterval(async () => {
-    const { data, error } = await supabase
-      .from("edit_lock")
-      .select("id,is_locked,locked_by,locked_at")
-      .eq("id", 1)
-      .single();
-
-    if (error || !data?.is_locked || !data.locked_at) {
-      return;
+    if (!editing) {
+      clearInactivityTimer();
+      return undefined;
     }
 
-    const lockedTime = new Date(data.locked_at).getTime();
-    const expired =
-      Date.now() - lockedTime > LOCK_TIMEOUT_MS;
-
-    if (!expired) {
-      return;
+    if (lock.locked_by !== editorId.current) {
+      clearInactivityTimer();
+      return undefined;
     }
 
-    await supabase
-      .from("edit_lock")
-      .update({
-        is_locked: false,
-        locked_by: null,
-        locked_at: null,
-      })
-      .eq("id", 1)
-      .eq("locked_by", data.locked_by);
+    markActivity();
 
-    setLock(EMPTY_LOCK);
-    setEditing(false);
-    setLockMessage("Edit session expired.");
-  }, 10000);
-
-  return () => {
-    window.clearInterval(timeoutChecker);
-  };
-}, []);
+    return () => {
+      clearInactivityTimer();
+    };
+  }, [
+    editing,
+    lock.locked_by,
+    markActivity,
+    clearInactivityTimer,
+  ]);
 
   useEffect(() => {
     function releaseLockOnExit() {
@@ -358,7 +461,9 @@ useEffect(() => {
         return;
       }
 
-      if (currentLock.locked_by !== editorId.current) {
+      if (
+        currentLock.locked_by !== editorId.current
+      ) {
         return;
       }
 
@@ -374,17 +479,38 @@ useEffect(() => {
         .then(() => {});
     }
 
-    window.addEventListener("pagehide", releaseLockOnExit);
-    window.addEventListener("beforeunload", releaseLockOnExit);
+    window.addEventListener(
+      "pagehide",
+      releaseLockOnExit
+    );
+
+    window.addEventListener(
+      "beforeunload",
+      releaseLockOnExit
+    );
 
     return () => {
-      window.removeEventListener("pagehide", releaseLockOnExit);
-      window.removeEventListener("beforeunload", releaseLockOnExit);
+      window.removeEventListener(
+        "pagehide",
+        releaseLockOnExit
+      );
+
+      window.removeEventListener(
+        "beforeunload",
+        releaseLockOnExit
+      );
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      clearInactivityTimer();
+    };
+  }, [clearInactivityTimer]);
+
   const lockedByOther =
-    lock.is_locked && lock.locked_by !== editorId.current;
+    lock.is_locked &&
+    lock.locked_by !== editorId.current;
 
   return {
     editing,
@@ -395,5 +521,6 @@ useEffect(() => {
     releaseLock,
     loadLock,
     setLockMessage,
+    markActivity,
   };
 }
