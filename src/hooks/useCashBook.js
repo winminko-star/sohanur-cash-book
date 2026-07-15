@@ -276,8 +276,8 @@ export default function useCashBook({
   }
 
   const secondConfirm = window.confirm(
-    "Are you completely sure?\n\n" +
-      "This action cannot be undone."
+    "Are you completely sure?(আপনি কি নিশ্চিত?)\n\n" +
+      "This action cannot be undone.(এই কাজটি আর ফিরিয়ে আনা যাবে না।)"
   );
 
   if (!secondConfirm) {
